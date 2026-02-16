@@ -10,6 +10,9 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 
+mod pty;
+use pty::PtySession;
+
 /// Application state with proper softbuffer resource management.
 ///
 /// The `Context` must be kept alive for the entire lifetime of the `Surface`,
@@ -19,6 +22,7 @@ struct Application {
     window: Option<Rc<Window>>,
     context: Option<Context<Rc<Window>>>,
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
+    pty: Option<PtySession>,
 }
 
 impl ApplicationHandler for Application {
@@ -43,6 +47,12 @@ impl ApplicationHandler for Application {
                 self.window = Some(window);
                 self.context = Some(context);
                 self.surface = Some(surface);
+
+                // Initialize PTY session and start reader thread
+                log::info!("Initializing PTY session");
+                let pty = PtySession::new();
+                pty.spawn_reader_thread();
+                self.pty = Some(pty);
 
                 // Request initial redraw
                 self.window.as_ref().unwrap().request_redraw();
@@ -115,6 +125,7 @@ fn main() {
         window: None,
         context: None,
         surface: None,
+        pty: None,
     };
     event_loop.run_app(&mut app).unwrap();
 }
