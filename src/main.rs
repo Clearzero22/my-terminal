@@ -49,10 +49,9 @@ impl ApplicationHandler for Application {
                 self.context = Some(context);
                 self.surface = Some(surface);
 
-                // Initialize PTY session and start reader thread
+                // Initialize PTY session (reader thread spawned automatically)
                 log::info!("Initializing PTY session");
                 let pty = PtySession::new();
-                pty.spawn_reader_thread();
                 self.pty = Some(pty);
 
                 // Request initial redraw
@@ -84,6 +83,33 @@ impl ApplicationHandler for Application {
                 if logical_key == Key::Named(NamedKey::Escape) {
                     log::info!("Escape key pressed, exiting...");
                     event_loop.exit();
+                } else if let Some(pty) = &self.pty {
+                    // Handle special keys
+                    match &logical_key {
+                        Key::Named(NamedKey::Enter) => {
+                            // Send carriage return for Enter key
+                            pty.write(b'\r');
+                            log::debug!("Sent Enter key to PTY");
+                        }
+                        Key::Named(NamedKey::Backspace) => {
+                            // Send backspace for Backspace key
+                            pty.write(0x08); // ASCII backspace
+                            log::debug!("Sent Backspace key to PTY");
+                        }
+                        Key::Named(NamedKey::Tab) => {
+                            // Send tab for Tab key
+                            pty.write(b'\t');
+                            log::debug!("Sent Tab key to PTY");
+                        }
+                        Key::Character(c) => {
+                            // Send character input
+                            pty.write_str(c.as_str());
+                            log::debug!("Sent '{}' to PTY", c);
+                        }
+                        _ => {
+                            log::debug!("Unhandled key: {:?}", logical_key);
+                        }
+                    }
                 }
             }
             WindowEvent::Resized(_) => {
