@@ -12,9 +12,11 @@ use winit::{
 
 mod ansi;
 mod buffer;
+mod font;
 mod grid;
 mod pty;
 use buffer::TerminalBuffer;
+use font::FontRenderer;
 use pty::PtySession;
 
 /// Custom event type for triggering redraws.
@@ -35,6 +37,7 @@ struct Application {
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
     pty: Option<PtySession>,
     buffer: Option<TerminalBuffer>,
+    font: Option<FontRenderer>,
     proxy: Option<EventLoopProxy<AppEvent>>,
 }
 
@@ -71,6 +74,11 @@ impl ApplicationHandler<AppEvent> for Application {
                 self.window = Some(window);
                 self.context = Some(context);
                 self.surface = Some(surface);
+
+                // Initialize font renderer
+                log::info!("Initializing font renderer");
+                let font = FontRenderer::with_size(14.0);
+                self.font = Some(font);
 
                 // Initialize terminal buffer
                 log::info!("Initializing terminal buffer");
@@ -154,8 +162,8 @@ impl ApplicationHandler<AppEvent> for Application {
             }
             WindowEvent::RedrawRequested => {
                 // Draw terminal buffer to window
-                if let (Some(window), Some(surface), Some(buffer)) =
-                    (&self.window, &mut self.surface, &self.buffer)
+                if let (Some(window), Some(surface), Some(buffer), Some(font)) =
+                    (&self.window, &mut self.surface, &self.buffer, &self.font)
                 {
                     let size = window.inner_size();
                     let (Some(width), Some(height)) =
@@ -168,36 +176,34 @@ impl ApplicationHandler<AppEvent> for Application {
 
                     let mut buffer_surface = surface.buffer_mut().expect("Failed to get buffer");
 
-                    // Fill with dark background
+                    // Fill with dark background (ARGB format)
                     buffer_surface.fill(0xff181818);
 
-                    // Get buffer content
+                    // Get buffer content and split into lines
                     let content = buffer.content();
+                    let lines = font::split_lines(&content);
 
-                    // For now, just show text length to verify rendering pipeline
-                    // TODO: Implement actual text rendering
                     let width_val = width.get() as usize;
                     let height_val = height.get() as usize;
 
-                    // Draw a simple pixel pattern to show buffer is working
-                    // Draw green pixel at top-left corner
-                    if width_val > 0 && height_val > 0 {
-                        // Draw a green indicator line showing buffer content length
-                        let content_len = content.len().min(100);
-                        for i in 0..content_len {
-                            let x = i * 8;
-                            if x < width_val {
-                                for y in 0..5 {
-                                    if y < height_val {
-                                        let idx = y * width_val + x;
-                                        if idx < buffer_surface.len() {
-                                            buffer_surface[idx] = 0xff00ff00;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // Calculate visible lines
+                    let char_height = font.char_height();
+                    let visible_lines = height_val / char_height;
+
+                    // Use a bright green color for text (ARGB)
+                    let text_color = 0xff00ff00;
+
+                    // Render the text lines
+                    font.render_lines(
+                        lines.into_iter(),
+                        8, // Left padding
+                        8, // Top padding
+                        &mut buffer_surface,
+                        width_val,
+                        height_val,
+                        text_color,
+                        visible_lines,
+                    );
 
                     buffer_surface.present().expect("Failed to present buffer");
                 }
@@ -224,6 +230,7 @@ fn main() {
         surface: None,
         pty: None,
         buffer: None,
+        font: None,
         proxy: Some(proxy),
     };
     event_loop.run_app(&mut app).unwrap();
