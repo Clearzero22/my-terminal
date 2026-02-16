@@ -9,6 +9,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+/// Callback type for handling PTY output.
+///
+/// This callback receives raw bytes from the PTY and can process
+/// them (e.g., write to a buffer, parse ANSI sequences, etc.).
+pub type OutputCallback = Arc<Mutex<Box<dyn Fn(&[u8]) + Send + Sync>>>;
+
 /// PTY session that manages a shell process.
 ///
 /// The session spawns a shell (zsh) and provides access to its
@@ -29,7 +35,7 @@ impl PtySession {
     /// Create a new PTY session with a zsh shell.
     ///
     /// This automatically spawns the reader thread to begin reading
-    /// shell output.
+    /// shell output. Output will be printed directly to stdout.
     ///
     /// # Returns
     /// A `PtySession` instance ready to read shell output.
@@ -40,6 +46,24 @@ impl PtySession {
     /// - Shell process cannot be spawned
     /// - Reader/writer cannot be obtained
     pub fn new() -> Self {
+        Self::with_output_callback(None)
+    }
+
+    /// Create a new PTY session with a custom output callback.
+    ///
+    /// # Arguments
+    /// * `callback` - Optional callback to handle PTY output. If None, output
+    ///               is printed directly to stdout.
+    ///
+    /// # Returns
+    /// A `PtySession` instance ready to read shell output.
+    ///
+    /// # Panics
+    /// Panics if:
+    /// - PTY system cannot be created
+    /// - Shell process cannot be spawned
+    /// - Reader/writer cannot be obtained
+    pub fn with_output_callback(callback: Option<OutputCallback>) -> Self {
         log::info!("Creating PTY session");
 
         // Get the native PTY system for the current platform
@@ -104,16 +128,23 @@ impl PtySession {
                         }
                         Ok(n) => {
                             total_bytes += n;
-                            // Release the lock before printing
+                            let data = &buffer[..n];
+                            // Release the lock before processing
                             drop(reader_guard);
 
-                            // Print the output to console
-                            let output = String::from_utf8_lossy(&buffer[..n]);
-                            print!("{}", output);
+                            // Use callback if provided, otherwise print to stdout
+                            if let Some(cb) = &callback {
+                                let cb = cb.lock().unwrap();
+                                cb(data);
+                            } else {
+                                // Print the output to console
+                                let output = String::from_utf8_lossy(data);
+                                print!("{}", output);
 
-                            // Ensure output is flushed immediately
-                            if let Err(e) = io::stdout().flush() {
-                                log::error!("Failed to flush stdout: {}", e);
+                                // Ensure output is flushed immediately
+                                if let Err(e) = io::stdout().flush() {
+                                    log::error!("Failed to flush stdout: {}", e);
+                                }
                             }
                         }
                         Err(e) => {
