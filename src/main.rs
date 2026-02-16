@@ -4,7 +4,7 @@ use std::rc::Rc;
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
-    event::{KeyEvent, WindowEvent},
+    event::{ElementState, KeyEvent, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoopProxy},
     keyboard::{Key, NamedKey},
     window::{Window, WindowAttributes, WindowId},
@@ -119,9 +119,14 @@ impl ApplicationHandler<AppEvent> for Application {
                 event_loop.exit();
             }
             WindowEvent::KeyboardInput {
-                event: KeyEvent { logical_key, .. },
+                event: KeyEvent { logical_key, state, repeat, .. },
                 ..
             } => {
+                // Only handle key press events (not release or repeat)
+                if state != ElementState::Pressed || repeat {
+                    return;
+                }
+
                 // Check if Escape key was pressed
                 if logical_key == Key::Named(NamedKey::Escape) {
                     log::info!("Escape key pressed, exiting...");
