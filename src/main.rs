@@ -10,6 +10,7 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 
+mod grid;
 mod pty;
 use pty::PtySession;
 
